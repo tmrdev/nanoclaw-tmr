@@ -9,6 +9,8 @@ import {
   TRIGGER_PATTERN,
 } from './config.js';
 import { WhatsAppChannel } from './channels/whatsapp.js';
+import { DiscordChannel } from './channels/discord.js';
+import { readEnvFile } from './env.js';
 import {
   ContainerOutput,
   runContainerAgent,
@@ -445,9 +447,30 @@ async function main(): Promise<void> {
   };
 
   // Create and connect channels
-  whatsapp = new WhatsAppChannel(channelOpts);
-  channels.push(whatsapp);
-  await whatsapp.connect();
+  // WhatsApp: only connect if auth exists
+  const waAuthDir = path.join(process.cwd(), 'store', 'auth');
+  if (fs.existsSync(waAuthDir) && fs.readdirSync(waAuthDir).length > 0) {
+    whatsapp = new WhatsAppChannel(channelOpts);
+    channels.push(whatsapp);
+    await whatsapp.connect();
+  } else {
+    logger.info('No WhatsApp auth found, skipping WhatsApp channel');
+  }
+
+  // Discord: connect if token is configured
+  const discordEnv = readEnvFile(['DISCORD_BOT_TOKEN']);
+  const discordToken = process.env.DISCORD_BOT_TOKEN || discordEnv.DISCORD_BOT_TOKEN;
+  if (discordToken) {
+    const discord = new DiscordChannel({ ...channelOpts, token: discordToken });
+    channels.push(discord);
+    await discord.connect();
+  } else {
+    logger.info('No DISCORD_BOT_TOKEN found, skipping Discord channel');
+  }
+
+  if (channels.length === 0) {
+    logger.warn('No channels configured. Add DISCORD_BOT_TOKEN to .env or run WhatsApp auth.');
+  }
 
   // Start subsystems (independently of connection handler)
   startSchedulerLoop({
